@@ -51,7 +51,7 @@ saveRDS(dt,"dtime.rds")
 saveRDS(tdmlist,"tdmlist.rds")
 dtt=dt
 dtt$read=(as.numeric(dt$read))
-dtt$scale=3*6319*2^(as.numeric(dt$scale)-1)
+dtt$scale=4*6319*2^(as.numeric(dt$scale)-1)
 dtt$process=as.numeric(dt$process)
 library(ggplot2)
 summary(lm(data=dtt,formula= I(read+process)~scale ))

@@ -1,0 +1,17 @@
+num=1
+for scale in {1..12}
+do
+	echo  $scale $num
+	mkdir -p teste/$scale
+	ls -1  final/en_US/|while read a;
+	do 
+		file=$a
+		tag=$(echo $a|cut -d "." -f 2)
+		bytes=$((6319*$num))
+		unit=$(cat perline|grep $tag|cut -d ';' -f 3) #how many lines are there in 6319 bytes?
+		lines=$(($unit*num))
+		echo $i total $bytes bytes
+		tail -n $lines final/en_US/$a > teste/$scale/$lines.$file
+	done
+	num=$((num*2))	
+done
