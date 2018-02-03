@@ -7,12 +7,18 @@ output:
 
 This is the first report as required by the John Hopkins Data Science Specialization capstone project. The project consists in utilizing Natural Language Processing Tecniques to build a related data product. 
 
+## Hardware
+This project was run in a very limited hardware, which forced a more rigorous sampling analysis.
+
+* Cpu - Intel(R) Core(TM)2 Duo CPU     T6670  @ 2.20GHz
+* MemTotal:        4008652 kB
+
 ## Dataset
 The initial dataset to be used must be download from cousera [site](
 https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip).
 
 It contains files in different languages from different sources:
-```{r}
+```{r path}
 path='final/en_US/'
 dir(path=path)
 ```
@@ -32,20 +38,21 @@ library(tm)
 library(data.table)
 library(RWeka)
 library(xml2)
-library(SnowballC)  
+library(SnowballC)
+suppressMessages(library(ggplot2))
+source('getTDM.R')
+knitr::opts_chunk$set(cache=FALSE)
 ```
 
 ### Loading Data
-```{r data,cache=T}
+```{r data,cache=TRUE}
 lang="english"
-source('getTDM.R')
-path='final/en_US/'
 size=1000
 freq=getFrequencies(path,size,maxcount = 10,maxsamples = 5)
-percentages=getPercentages(freq,percentages=1:9*0.1)
+percentages=getPercentages(freq,percentages=1:19*0.05)
 ```
-The *getFrequencies* functions outputs the frequency of each word for each sample (1 to 5) and for each sample size (number of lines sampled)?
-```{r}
+The *getFrequencies* function outputs the frequency of each word for each sample (1 to 5) and for each sample size (number of lines sampled):
+```{r }
  head(freq)
 ```
 The *getPercentages* outputs the number of unique words(TargetWords) 
@@ -55,28 +62,56 @@ required to achieve the percentage desired of the total number of Words (TotalWo
 ```
 ### Cleaning Data
 
+Cleaning is performed in the GetTDM.R source code that is called by getFrequency function
+```{r getTDM,eval=FALSE,cache=T}
+getTDM=function(sampledir,type='twitter'){
+        sp <- Corpus(DirSource(sampledir,pattern = paste(type,'.*',sep='')),
+                     readerControl=list(readPlain,
+                                        language=lang,
+                                        load=F)
+        )
+        detectNonAsciiChar = function(x) iconv(x, from="UTF-8", to="ASCII",sub="X")
+        transformNonAsciiWord = function(x) gsub("[a-z]*X+[a-z]*", "NonAsciiWord", x)
+        removeHttp = function(x) gsub("http((?! ).)*","",x,perl=TRUE)
+        removeTripleChars = function(x) gsub("([[:alpha:]])\\1{2,}","\\1",x,perl=TRUE)
+        sp=tm_map(sp, content_transformer(tolower))
+        sp = tm_map(sp, content_transformer(detectNonAsciiChar))
+        sp = tm_map(sp, content_transformer(transformNonAsciiWord))
+        sp=tm_map(sp, content_transformer(removeHttp))
+        sp=tm_map(sp, removeWords,stopwords(kind="en"))
+        sp=tm_map(sp, removePunctuation)
+        sp=tm_map(sp, removeNumbers)
+        tdmsp=TermDocumentMatrix(sp,control = list(stripWhitespace=TRUE,wordLengths=c(3,50)))        
+}
+```
+We chose to retain the hash words since we considere it as part of the language used in the source. 
+All foreign words with non ascciiWord are coded as "NonAsciiWord" that way one can estimate the ocurrency 
+of non english words in the text.
+Since we have sources in other languages we could build a foreign word dictionary to better assess the presence of foreign words.
 
 ### Plots
 
 We plot the number of unique words (TargetWords) as a function of the total sampled words for each percentage:
-```{r}
-suppressMessages(library(ggplot2))
+```{r WordPlot}
 ggplot(percentages,aes(x=TotalWords,y=TargetWords,color=factor(Percentage)))+geom_point()
 ```
 
-From the plot above we can see that the estimate for the number of unique words required varies with the number of sampled words and Percentage. 
+From the plot above we can see that the estimate for the number of unique words required varies with the number of sampled words and Percentage. However, the **TargetWords** don`t seem to converge for high percentages.
 
 A plot using the inverse of the size of the sample would indicate the asymptotic limit of large samples:
-```{r}
+```{r InverseWordPlot}
 ggplot(percentages,aes(x=1/TotalWords,y=TargetWords,color=factor(Percentage)))+geom_point()
 ```
 
 We can see from the previous plot that the number of words required to get a percentage of the total words of the document increases as we increase our sampling size (number of lines samples).
-The first ansatz to use should be *y=A(p)-k(p)/(1+x)* which reduces to 
-*y=A(p)+k(p)/x)* for large x. 
+The first ansatz to use should be:
+$$y=A(p)-\frac{k(p)}{(1+x)}$$ where *y* is the **TargetWords**, *p*  stands for **percentage**, *x* is the number of unique words in the sample (**TotalWords**) and the constants A and K depends on the **percentage** *p*.
+This equation reduces to 
+$$y=A(p)+\frac{k(p)}{x}$$ 
+for large x. 
 In order to obtain the large sampling limit we take the intercept of the linearized regression:
 
-```{r}
+```{r frequentWordDistribuition}
 library(data.table)
 Percentage_list=unique(as.character(
         percentages[TotalWords > 60000]$Percentage
@@ -96,28 +131,53 @@ regressions = rbindlist(lapply(Percentage_list, function(P) {
 ))
 frequent_word_distribuition=regressions[,.(Percentage=P,UniqueWords=v,error=err,p)]
 ```
+The sampling error is really small, but for low percentages we obtain essentially a perfect fit. This means that the minimum sample used (1000 lines) is sufficient to asses frequency of the words that comprise 10% of the document,  and for large percentage  the error seems to increase which means that a large sampling pool would be necessary to reduce error:
+```{r RelativeRegressionError}
+ggplot(frequent_word_distribuition[,.(UniqueWords,RelativeRegressionError=error/UniqueWords,Percentage)],aes(x=Percentage,y=RelativeRegressionError,color=UniqueWords))+geom_point()
+```
+The first point above 0.01 seems to be an outlier due to the small number of samples (5 repetions). The last 2 points above 0.01 of relative error may be due to the small number of words sampled. 
 
 The result of the regression can be seen below:
-```{r}
- head(frequent_word_distribuition)
+```{r uniqueWordPlot}
+ head(frequent_word_distribuition,10)
 ggplot(frequent_word_distribuition,aes(x=(as.numeric(Percentage)),y=(UniqueWords),ymin=(UniqueWords-error),ymax=(UniqueWords+error)))+geom_point()+
         geom_errorbar()
 ```
 
 There seems to be an exponential increase in the number of unique words required as a function of the Percentage:
 
-``` {r}
-ggplot(frequent_word_distribuition[Percentage>0.2 & Percentage <0.9],aes(x=(as.numeric(Percentage)),y=log(UniqueWords),ymin=log(UniqueWords-error),ymax=log(UniqueWords+error)))+geom_point()+
-        geom_errorbar()+geom_smooth(method="lm")
+``` {r LogUniqueWordPlot}
+par(mfrow=c(1,1)) 
+ggplot(frequent_word_distribuition,aes(x=(as.numeric(Percentage)),y=log(UniqueWords),ymin=log(UniqueWords-error),ymax=log(UniqueWords+error)))+geom_point()+
+        geom_errorbar()+geom_smooth(aes(weight=1/(1+error)^2))
+
+ggplot(frequent_word_distribuition[Percentage>0 & Percentage <0.9]
+       
 ```
+It seem to have 3 different regimes of word frequency. One for percertages below 25% (high frequency words),another for between 25% and 75% (common words)
+and those for percentages above 75% ( rare words).
+
 
 A  exponential fit results in :
-``` {r}
-summary(lm(y~x,
-        data=frequent_word_distribuition[Percentage>0.2 & Percentage <0.9,
-                                         .(x=(as.numeric(Percentage)),y=log(UniqueWords))]
-        ))
-                                      
+``` {r exponentialFit}
+efit=lm(y~x,weights = 1/error^2,
+        data=frequent_word_distribuition[Percentage>0 & Percentage <0.9,
+                        .(x=(as.numeric(Percentage)),y=log(UniqueWords),
+                          error)]     )
+s=summary(efit)
+s                                      
 ```
 
-An exponential fit seems to explain really well how many unique words are needed to achieve a given percenage of the document.
+An exponential fit seems to explain really well how many unique words are needed to achieve a given percentage of the words used in the document. Lets check the if the residuals confirms our visual inspection:
+
+```{r residuals}
+par(mfrow=c(2,2)) # Change the panel layout to 2 x 2
+plot(efit)
+```
+
+The percentage $$P$$ of the document is related with the distribuition of the word frequency $$WF$$ as function of the number of unique words ($$NUW$$)as :
+$$P = \sum_1^{NUW} frequency(NUM)/TotalWords$$
+$$NUM = \exp^{A+B*P}$$
+$$P = (ln(NUM)-A)/B$$
+
+par(mfrow=c(1,1)) # Change back to 1 x 1

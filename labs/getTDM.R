@@ -15,11 +15,18 @@ getTDM=function(sampledir,type='twitter'){
                                         language=lang,
                                         load=F)
         )
+        detectNonAsciiChar = function(x) iconv(x, from="UTF-8", to="ASCII",sub="X")
+        transformNonAsciiWord = function(x) gsub("[a-z]*X+[a-z]*", "NonAsciiWord", x)
+        removeHttp = function(x) gsub("http((?! ).)*","",x,perl=TRUE)
+        removeTripleChars = function(x) gsub("([[:alpha:]])\\1{2,}","\\1",x,perl=TRUE)
         sp=tm_map(sp, content_transformer(tolower))
+        sp = tm_map(sp, content_transformer(detectNonAsciiChar))
+        sp = tm_map(sp, content_transformer(transformNonAsciiWord))
+        sp=tm_map(sp, content_transformer(removeHttp))
         sp=tm_map(sp, removeWords,stopwords(kind="en"))
         sp=tm_map(sp, removePunctuation)
         sp=tm_map(sp, removeNumbers)
-        tdmsp=TermDocumentMatrix(sp,control = list(stripWhitespace=TRUE,wordLengths=c(5,50)))        
+        tdmsp=TermDocumentMatrix(sp,control = list(stripWhitespace=TRUE,wordLengths=c(3,50)))        
 }
 getFrequencies=function(path,size,maxcount,maxsamples){
         freq=rbindlist(
